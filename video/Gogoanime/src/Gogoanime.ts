@@ -1,427 +1,599 @@
-import { createEntry, createEntryResults, createVideoEpisodeDetails, Entry, EntryContentRating, EntryResults, EntryResultsInfo, EntryStatus, FetchOptions, Listing, VideoEpisode, VideoEpisodeDetails, VideoSource, Filter, Document, createShortEntry, fetch, createMultiSelectFilter, createSortFilter, MultiSelectFilter, SortFilter, ShortEntry, createListing, createVideoEpisode, VideoEpisodeType, VideoEpisodeUrl, VideoEpisodeUrlType, createVideoEpisodeProvider, VideoEpisodeProvider, createSegmentFilter, createToggleFilter } from "soshiki-sources"
-import CryptoJS from "crypto-es"
+import {
+    createVideoEntry,
+    createVideoEntryResults,
+    createVideoEpisodeDetails,
+    VideoEntry,
+    EntryContentRating,
+    VideoEntryResults,
+    EntryStatus,
+    FetchOptions,
+    Listing,
+    VideoEpisode,
+    VideoEpisodeDetails,
+    VideoSource,
+    Filter,
+    Document,
+    fetch,
+    createMultiSelectFilter,
+    createSortFilter,
+    MultiSelectFilter,
+    SortFilter,
+    createListing,
+    createVideoEpisode,
+    VideoEpisodeType,
+    VideoEpisodeUrl,
+    createVideoEpisodeProvider,
+    VideoEpisodeProvider,
+    createSegmentFilter,
+    createToggleFilter,
+    FilterType,
+    createFilterGroup,
+    FilterGroup,
+    ListingType,
+    VideoEpisodeResults,
+    createVideoEpisodeResults,
+} from "soshiki-sources";
+import CryptoJS from "crypto-es";
 
-const BASE_URL = "https://gogoanime.hu"
-const AJAX_URL = "https://ajax.gogo-load.com"
+let baseUrl: string | undefined;
+const AJAX_URL = "https://ajax.gogo-load.com";
 
-const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/
+const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/;
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36'
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36";
 const GOGO_KEYS = {
-    key: CryptoJS.enc.Utf8.parse('37911490979715163134003223491201'),
-    secondKey: CryptoJS.enc.Utf8.parse('54674138327930866480207815084989'),
-    iv: CryptoJS.enc.Utf8.parse('3134003223491201'),
-}
+    key: CryptoJS.enc.Utf8.parse("37911490979715163134003223491201"),
+    secondKey: CryptoJS.enc.Utf8.parse("54674138327930866480207815084989"),
+    iv: CryptoJS.enc.Utf8.parse("3134003223491201"),
+};
 
-const STREAMSB_HOST = 'https://streamsss.net'
-const STREAMSB_PAYLOAD_START = '5773626d62663976713374717c7c'
-const STREAMSB_PAYLOAD_END = '7c7c346f323179543569386f31597c7c73747265616d7362'
-
-let mappings: {[key: string]: {[key2: string]: string}} = {}
+const STREAMSB_HOST = "https://streamsss.net";
+const STREAMSB_PAYLOAD_START = "5773626d62663976713374717c7c";
+const STREAMSB_PAYLOAD_END = "7c7c346f323179543569386f31597c7c73747265616d7362";
 
 export default class GogoanimeSource extends VideoSource {
-    id = "en_gogoanime"
-    async getListing(previousInfo: EntryResultsInfo | null, listing: Listing): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
-        let entries: ShortEntry[] = []
+    id = "en_gogoanime";
+    async getListing(listing: Listing, page: number): Promise<VideoEntryResults> {
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        let entries: VideoEntry[] = [];
 
-        if (listing.id === 'popular' || listing.id === '') {
-            const document = Document.parse(await fetch(`${AJAX_URL}/ajax/page-recent-release-ongoing.html?page=${page}`).then(res => `<html>${res.data}</html>`))
-            const items = document.querySelectorAll("div.added_series_body > ul > li")
+        if (listing.id === "popular" || listing.id === "") {
+            const document = Document.parse(
+                await fetch(`${AJAX_URL}/ajax/page-recent-release-ongoing.html?page=${page}`).then((res) => `<html>${res.data}</html>`)
+            );
+            const items = document.querySelectorAll("div.added_series_body > ul > li");
             for (const item of items) {
-                const children = item.children
-                entries.push(createShortEntry({
-                    id: children[0].getAttribute("href"),
-                    title: children[1].innerText.trim(),
-                    subtitle: children[3].innerText.trim(),
-                    cover: children[0].querySelector("div").style.match(/https?:\/\/[^']*/)?.[0] ?? ""
-                }))
+                const children = item.children;
+                entries.push(
+                    createVideoEntry({
+                        id: children[0].getAttribute("href"),
+                        title: children[1].innerText.trim(),
+                        cover: children[0].querySelector("div").style.match(/https?:\/\/[^']*/)?.[0] ?? "",
+                        episodes: parseFloat(
+                            children[3]
+                                .querySelector("a")
+                                .getAttribute("href")
+                                .match(/-episode-(.*?)$/)?.[1]
+                                .replace("-", ".") ?? ""
+                        ),
+                    })
+                );
             }
             document.free();
         } else {
-            const document = Document.parse(await fetch(`${AJAX_URL}/ajax/page-recent-release.html?page=${page}&type=${listing.id}`).then(res => `<html>${res.data}</html>`))
-            const items = document.querySelectorAll("div.last_episodes > ul.items > li")
+            const document = Document.parse(
+                await fetch(`${AJAX_URL}/ajax/page-recent-release.html?page=${page}&type=${listing.id}`).then((res) => `<html>${res.data}</html>`)
+            );
+            const items = document.querySelectorAll("div.last_episodes > ul.items > li");
             for (const item of items) {
-                entries.push(createShortEntry({
-                    id: "/category" + item.querySelector("a").getAttribute("href").replace(/-episode-(\d+)$/, ""),
-                    title: item.querySelector("p.name").innerText.trim(),
-                    subtitle: item.querySelector("p.episode").innerText.trim(),
-                    cover: item.querySelector("img").getAttribute("src")
-                }))
+                entries.push(
+                    createVideoEntry({
+                        id:
+                            "/category" +
+                            item
+                                .querySelector("a")
+                                .getAttribute("href")
+                                .replace(/-episode-(.*?)$/, ""),
+                        title: item.querySelector("p.name").innerText.trim(),
+                        cover: item.querySelector("img").getAttribute("src"),
+                        episodes: parseFloat(
+                            item
+                                .querySelector("a")
+                                .getAttribute("href")
+                                .match(/-episode-(.*?)$/)?.[1]
+                                .replace("-", ".") ?? ""
+                        ),
+                    })
+                );
             }
-            /*
-            <li>        
-      <div class="img">
-        <a href="/the-marginal-service-episode-4" title="The Marginal Service">
-          <img src="https://gogocdn.net/cover/the-marginal-service.png" alt="The Marginal Service" />
-          <div class="type ic-SUB"></div>
-        </a>
-      </div>
-      <p class="name"><a href="/the-marginal-service-episode-4" title="The Marginal Service">The Marginal Service</a></p>
-      <p class="episode">Episode 4</p>                   
-    </li>
-            */
+
             document.free();
         }
-        return createEntryResults({
+        return createVideoEntryResults({
             page,
-            entries,
-            hasMore: entries.length > 0
-        })
+            results: entries,
+            hasMore: entries.length > 0,
+        });
     }
-    async getSearchResults(previousInfo: EntryResultsInfo | null, query: string, filters: Filter[]): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
-        let url = `${BASE_URL}/filter.html?keyword=${encodeURIComponent(query)}&page=${page}`
+    async getSearchResults(query: string, page: number, filters: Filter[]): Promise<VideoEntryResults> {
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        let url = `${baseUrl!}/filter.html?keyword=${encodeURIComponent(query)}&page=${page}`;
         for (const filter of filters) {
-            if (filter.type === 'sort') {
-                url += `&${mappings[filter.id][(filter as SortFilter).value ?? 'Name A-Z'] }`
-            } else if (filter.type === 'multiSelect') {
-                for (const value of (filter as MultiSelectFilter).value) url += `&${mappings[filter.id][value]}`
+            if (filter.type === FilterType.sort) {
+                url += `&${(filter as SortFilter).value.find((option) => option.selected)?.id ?? (filter as SortFilter).value[0].id}`;
+            } else if (filter.type === FilterType.multiSelect) {
+                for (const value of (filter as MultiSelectFilter).value) url += `&${value.id}`;
             }
         }
-        const document = Document.parse(await fetch(url).then(res => res.data))
-        const items = document.querySelectorAll("ul.items > li")
-        let entries: ShortEntry[] = []
+        const document = Document.parse(await fetch(url).then((res) => res.data));
+        const items = document.querySelectorAll("ul.items > li");
+        let entries: VideoEntry[] = [];
         for (const item of items) {
-            const e = createShortEntry({
+            const e = createVideoEntry({
                 id: item.querySelector("a").getAttribute("href"),
                 title: item.querySelector("p.name").innerText.trim(),
-                subtitle: item.querySelector("p.released").innerText.trim(),
-                cover: item.querySelector("img").getAttribute("src")
-            })
-            entries.push(e)
+                cover: item.querySelector("img").getAttribute("src"),
+            });
+            entries.push(e);
         }
-        document.free()
-        return createEntryResults({
+        document.free();
+        return createVideoEntryResults({
             page,
-            entries,
-            hasMore: entries.length > 0
-        })
+            results: entries,
+            hasMore: entries.length > 0,
+        });
     }
     parseEntryStatus(status: string): EntryStatus {
         switch (status) {
-            case 'Ongoing': return EntryStatus.ongoing
-            case 'Completed': return EntryStatus.completed
-            default: return EntryStatus.unknown
+            case "Ongoing":
+                return EntryStatus.ongoing;
+            case "Completed":
+                return EntryStatus.completed;
+            default:
+                return EntryStatus.unknown;
         }
     }
-    async getEntry(id: string): Promise<Entry> {
-        const document = Document.parse(await fetch(`${BASE_URL}${id}`).then(res => res.data))
-        const info = document.querySelector("div.anime_info_body_bg")
-        const types = info.querySelectorAll("p.type")
-        const entry = createEntry({
+    async getEntry(id: string): Promise<VideoEntry> {
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        const document = Document.parse(await fetch(`${baseUrl!}${id}`).then((res) => res.data));
+        const info = document.querySelector("div.anime_info_body_bg");
+        const types = info.querySelectorAll("p.type");
+        const entry = createVideoEntry({
             id,
             title: info.querySelector("h1").innerText.trim(),
-            staff: [],
-            tags: types[2].querySelectorAll("a").map(e => e.innerText.replace(", ", "")),
+            tags: types[2].querySelectorAll("a").map((e) => e.innerText.replace(", ", "")),
             cover: info.querySelector("img").getAttribute("src"),
-            nsfw: EntryContentRating.safe,
+            contentRating: EntryContentRating.safe,
             status: this.parseEntryStatus(types[4].querySelector("a").innerText),
-            url: `${BASE_URL}${id}`,
-            description: types[1].innerText.substring('Plot Summary: '.length).trim()
-        })
-        document.free()
-        return entry
+            links: [`${baseUrl!}${id}`],
+            synopsis: types[1].innerText.substring("Plot Summary: ".length).trim(),
+        });
+        document.free();
+        return entry;
     }
-    async getEpisodes(id: string): Promise<VideoEpisode[]> {
-        const document = Document.parse(await fetch(`${BASE_URL}${id}`).then(res => res.data))
-        const ajaxId = document.getElementById("movie_id").getAttribute("value")
-        document.free()
-        const document2 = Document.parse(await fetch(`${AJAX_URL}/ajax/load-list-episode?ep_start=0&ep_end=1000000&id=${ajaxId}`).then(res => `<html>${res.data}</html>`))
-        let episodes: VideoEpisode[] = []
+    async getEpisodes(id: string, page: number): Promise<VideoEpisodeResults> {
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        const document = Document.parse(await fetch(`${baseUrl!}${id}`).then((res) => res.data));
+        const ajaxId = document.getElementById("movie_id").getAttribute("value");
+        document.free();
+        const document2 = Document.parse(
+            await fetch(`${AJAX_URL}/ajax/load-list-episode?ep_start=0&ep_end=1000000&id=${ajaxId}`).then((res) => `<html>${res.data}</html>`)
+        );
+        let episodes: VideoEpisode[] = [];
         for (const episode of document2.querySelectorAll("ul#episode_related > li > a")) {
-            const href = episode.getAttribute("href").trim()
-            const typeText = episode.querySelector("div.cate").innerText.toLowerCase()
-            episodes.push(createVideoEpisode({
-                id: href,
-                entryId: id,
-                episode: parseFloat(href.match(/(?:.*?)episode-(\d+)/)?.[1] ?? "0"),
-                type: typeText === 'sub' ? VideoEpisodeType.sub : typeText === 'dub' ? VideoEpisodeType.dub : VideoEpisodeType.unknown
-            }))
+            const href = episode.getAttribute("href").trim();
+            const typeText = episode.querySelector("div.cate").innerText.toLowerCase();
+            episodes.push(
+                createVideoEpisode({
+                    id: href,
+                    entryId: id,
+                    episode: parseFloat(href.match(/(?:.*?)episode-(\d+)/)?.[1] ?? "0"),
+                    type: typeText === "sub" ? VideoEpisodeType.sub : typeText === "dub" ? VideoEpisodeType.dub : VideoEpisodeType.unknown,
+                })
+            );
         }
-        document2.free()
-        return episodes
+        document2.free();
+        return createVideoEpisodeResults({
+            page,
+            hasMore: false,
+            results: episodes,
+        });
     }
     async getEpisodeDetails(id: string, entryId: string): Promise<VideoEpisodeDetails> {
-        const document = Document.parse(await fetch(`${BASE_URL}${id}`).then(res => res.data))
-        const gogoServerUrl = `${document.querySelector("div#load_anime > div > div > iframe").getAttribute("src")}`
-        const vidStreamingServerUrl = `${document.querySelector("div.anime_video_body > div.anime_muti_link > ul > li.vidcdn > a").getAttribute("data-video")}`
-        const streamSBServerUrl = `${document.querySelector("div.anime_video_body > div.anime_muti_link > ul > li.streamsb > a").getAttribute("data-video")}`
-        document.free()
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        const document = Document.parse(await fetch(`${baseUrl!}${id}`).then((res) => res.data));
+        const gogoServerUrl = `${document.querySelector("div#load_anime > div > div > iframe").getAttribute("src")}`;
+        const vidStreamingServerUrl = `${document
+            .querySelector("div.anime_video_body > div.anime_muti_link > ul > li.vidcdn > a")
+            .getAttribute("data-video")}`;
+        const streamSBServerUrl = `${document
+            .querySelector("div.anime_video_body > div.anime_muti_link > ul > li.streamsb > a")
+            .getAttribute("data-video")}`;
+        document.free();
 
-        let promises: Promise<VideoEpisodeProvider>[] = []
+        let promises: Promise<VideoEpisodeProvider>[] = [];
         if (gogoServerUrl.match(URL_REGEX) !== null) {
-            promises.push((async () => createVideoEpisodeProvider({
-                name: "GogoCDN",
-                urls: await this.getGogoCDNUrls(gogoServerUrl.startsWith("http") ? gogoServerUrl : `https:${gogoServerUrl}`)
-            }))())
+            promises.push(
+                (async () =>
+                    createVideoEpisodeProvider({
+                        name: "GogoCDN",
+                        urls: await this.getGogoCDNUrls(gogoServerUrl.startsWith("http") ? gogoServerUrl : `https:${gogoServerUrl}`),
+                    }))()
+            );
         }
         if (vidStreamingServerUrl.match(URL_REGEX) !== null) {
-            promises.push((async () => createVideoEpisodeProvider({
-                name: "Vidstreaming",
-                urls: await this.getGogoCDNUrls(vidStreamingServerUrl.startsWith("http") ? vidStreamingServerUrl : `https:${vidStreamingServerUrl}`)
-            }))())
+            promises.push(
+                (async () =>
+                    createVideoEpisodeProvider({
+                        name: "Vidstreaming",
+                        urls: await this.getGogoCDNUrls(
+                            vidStreamingServerUrl.startsWith("http") ? vidStreamingServerUrl : `https:${vidStreamingServerUrl}`
+                        ),
+                    }))()
+            );
         }
         if (streamSBServerUrl.match(URL_REGEX) !== null && !(this.getSettingsValue("disableStreamSB") === true)) {
-            promises.push((async () => createVideoEpisodeProvider({
-                name: "StreamSB",
-                urls: await this.getStreamSBUrls(streamSBServerUrl)
-            }))())
+            promises.push(
+                (async () =>
+                    createVideoEpisodeProvider({
+                        name: "StreamSB",
+                        urls: await this.getStreamSBUrls(streamSBServerUrl),
+                    }))()
+            );
         }
-        console.log("STARTING")
-        const providers = (await Promise.all(promises)).filter(provider => provider.urls.length > 0).sort((a, b) => a.name === this.getSettingsValue("preferredProvider") ? -1 : b.name === this.getSettingsValue("preferredProvider") ? 1 : 0)
-        console.log(JSON.stringify(providers))
+
+        const providers = (await Promise.all(promises))
+            .filter((provider) => provider.urls.length > 0)
+            .sort((a, b) =>
+                a.name === this.getSettingsValue("preferredProvider") ? -1 : b.name === this.getSettingsValue("preferredProvider") ? 1 : 0
+            );
 
         return createVideoEpisodeDetails({
             id,
             entryId,
-            providers
-        })
+            providers,
+        });
     }
-    async getFilters(): Promise<Filter[]> {
-        let document = Document.parse(await fetch(`${BASE_URL}/filter.html`).then(res => res.data))
-        let genres = document.querySelectorAll("div.cls_genre > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let countries = document.querySelectorAll("div.cls_country > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let seasons = document.querySelectorAll("div.cls_season > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let years = document.querySelectorAll("div.cls_year > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let types = document.querySelectorAll("div.cls_type > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let statuses = document.querySelectorAll("div.cls_status > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        let sort = document.querySelectorAll("div.cls_sort > ul > li").map(el => { return { id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`, name: el.innerText} })
-        document.free()
-        mappings["genre"] = {}
-        genres.forEach(genre => mappings["genre"][genre.name] = genre.id)
-        mappings["country"] = {}
-        countries.forEach(country => mappings["country"][country.name] = country.id)
-        mappings["season"] = {}
-        seasons.forEach(season => mappings["season"][season.name] = season.id)
-        mappings["year"] = {}
-        years.forEach(year => mappings["year"][year.name] = year.id)
-        mappings["type"] = {}
-        types.forEach(type => mappings["type"][type.name] = type.id)
-        mappings["status"] = {}
-        statuses.forEach(status => mappings["status"][status.name] = status.id)
-        mappings["sort"] = {}
-        sort.forEach(option => mappings["sort"][option.name] = option.id)
+    async getFilters(): Promise<FilterGroup[]> {
+        if (typeof baseUrl === "undefined") await this.refreshBaseUrl();
+        let document = Document.parse(await fetch(`${baseUrl!}/filter.html`).then((res) => res.data));
+        let genres = document.querySelectorAll("div.cls_genre > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let countries = document.querySelectorAll("div.cls_country > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let seasons = document.querySelectorAll("div.cls_season > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let years = document.querySelectorAll("div.cls_year > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let types = document.querySelectorAll("div.cls_type > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let statuses = document.querySelectorAll("div.cls_status > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        let sort = document.querySelectorAll("div.cls_sort > ul > li").map((el) => {
+            return {
+                id: `${el.querySelector("input").getAttribute("name")}=${el.querySelector("input").getAttribute("value")}`,
+                name: el.innerText,
+            };
+        });
+        document.free();
         return [
-            createSortFilter({
-                id: "sort",
-                value: sort[0].name,
-                name: "Sort",
-                selections: sort.map(x => x.name)
+            createFilterGroup({
+                filters: [
+                    createSortFilter({
+                        id: "sort",
+                        value: sort.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Sort",
+                    }),
+                    createMultiSelectFilter({
+                        id: "genre",
+                        value: genres.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Genre",
+                    }),
+                    createMultiSelectFilter({
+                        id: "country",
+                        value: countries.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Country",
+                    }),
+                    createMultiSelectFilter({
+                        id: "season",
+                        value: seasons.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Season",
+                    }),
+                    createMultiSelectFilter({
+                        id: "year",
+                        value: years.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Year",
+                    }),
+                    createMultiSelectFilter({
+                        id: "type",
+                        value: types.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Type",
+                    }),
+                    createMultiSelectFilter({
+                        id: "status",
+                        value: statuses.map((item) => ({
+                            selected: false,
+                            ...item,
+                        })),
+                        name: "Status",
+                    }),
+                ],
             }),
-            createMultiSelectFilter({
-                id: "genre",
-                value: [],
-                name: "Genre",
-                selections: genres.map(x => x.name)
-            }),
-            createMultiSelectFilter({
-                id: "country",
-                value: [],
-                name: "Country",
-                selections: countries.map(x => x.name)
-            }),
-            createMultiSelectFilter({
-                id: "season",
-                value: [],
-                name: "Season",
-                selections: seasons.map(x => x.name)
-            }),
-            createMultiSelectFilter({
-                id: "year",
-                value: [],
-                name: "Year",
-                selections: years.map(x => x.name)
-            }),
-            createMultiSelectFilter({
-                id: "type",
-                value: [],
-                name: "Type",
-                selections: types.map(x => x.name)
-            }),
-            createMultiSelectFilter({
-                id: "status",
-                value: [],
-                name: "Status",
-                selections: statuses.map(x => x.name)
-            })
-        ]
+        ];
     }
     async getListings(): Promise<Listing[]> {
         return [
             createListing({
                 id: "1",
-                name: "Recent"
-            }),
-            createListing({
-                id: "2",
-                name: "Dub"
-            }),
-            createListing({
-                id: "3",
-                name: "Chinese"
+                name: "Recent",
+                type: ListingType.featured,
             }),
             createListing({
                 id: "popular",
-                name: "Popular"
-            })
-        ]
-    }
-    async getSettings(): Promise<Filter[]> {
-        return [
-            createSegmentFilter({
-                id: "preferredProvider",
-                value: "GogoCDN",
-                name: "Preferred Provider",
-                selections: ["GogoCDN", "Vidstreaming", "StreamSB"]
+                name: "Popular",
+                type: ListingType.topRated,
             }),
-            createToggleFilter({
-                id: "disableStreamSB",
-                value: false,
-                name: "Disable StreamSB"
-            })
-        ]
+            createListing({
+                id: "2",
+                name: "Dub",
+                type: ListingType.basic,
+            }),
+            createListing({
+                id: "3",
+                name: "Chinese",
+                type: ListingType.basic,
+            }),
+        ];
     }
-    async modifyVideoRequest(url: string, options: FetchOptions): Promise<{ url: string; options: FetchOptions; }> {
-        let newHeaders: {[key: string]: string} = {
-            Referer: url.match(/([^\?]*)\?(.*)/)?.[1] ?? ""
-        }
-        if (url.includes("akamai")) { // streamsb
-            newHeaders["watchsb"] = "streamsb"
-            newHeaders["User-Agent"] = USER_AGENT
+    async getSettings(): Promise<FilterGroup[]> {
+        return [
+            createFilterGroup({
+                filters: [
+                    createSegmentFilter({
+                        id: "preferredProvider",
+                        value: ["GogoCDN", "Vidstreaming", "StreamSB"].map((provider) => ({
+                            id: provider,
+                            name: provider,
+                            selected: false,
+                        })),
+                        name: "Preferred Provider",
+                    }),
+                    createToggleFilter({
+                        id: "disableStreamSB",
+                        value: false,
+                        name: "Disable StreamSB",
+                    }),
+                ],
+                footer: "Disabling StreamSB could prevent some possible issues with episode loading.",
+            }),
+        ];
+    }
+    async modifyVideoRequest(url: string, options: FetchOptions): Promise<{ url: string; options: FetchOptions }> {
+        let newHeaders: { [key: string]: string } = {
+            Referer: url.match(/([^\?]*)\?(.*)/)?.[1] ?? "",
+        };
+        if (url.includes("akamai")) {
+            // streamsb
+            newHeaders["watchsb"] = "streamsb";
+            newHeaders["User-Agent"] = USER_AGENT;
         }
         return {
             url,
             options: {
                 headers: {
                     ...newHeaders,
-                    ...options.headers ?? {}
+                    ...(options.headers ?? {}),
                 },
-                ...options ?? {}
-            }
-        }
+                ...(options ?? {}),
+            },
+        };
     }
 
     async getGogoCDNUrls(serverUrl: string): Promise<VideoEpisodeUrl[]> {
-        const document = Document.parse(await fetch(serverUrl).then(res => res.data))
+        const document = Document.parse(await fetch(serverUrl).then((res) => res.data));
 
-        const id = serverUrl.match(/([^\?]*)\?(.*)/)?.[2].split('&').find(e => e.split('=')[0] === 'id')?.split('=')[1] ?? ''
-        const encryptedKey = CryptoJS.AES.encrypt(id, GOGO_KEYS.key, { iv: GOGO_KEYS.iv })
-        const scriptValue = document.querySelector("script[data-name='episode']").getAttribute("data-value")
-        const decryptedToken = CryptoJS.AES.decrypt(scriptValue, GOGO_KEYS.key, { iv: GOGO_KEYS.iv }).toString(CryptoJS.enc.Utf8)
-        const encryptedAjaxParams = `id=${encryptedKey}&alias=${id}&${decryptedToken}`
-        document.free()
+        const id =
+            serverUrl
+                .match(/([^\?]*)\?(.*)/)?.[2]
+                .split("&")
+                .find((e) => e.split("=")[0] === "id")
+                ?.split("=")[1] ?? "";
+        const encryptedKey = CryptoJS.AES.encrypt(id, GOGO_KEYS.key, {
+            iv: GOGO_KEYS.iv,
+        });
+        const scriptValue = document.querySelector("script[data-name='episode']").getAttribute("data-value");
+        const decryptedToken = CryptoJS.AES.decrypt(scriptValue, GOGO_KEYS.key, {
+            iv: GOGO_KEYS.iv,
+        }).toString(CryptoJS.enc.Utf8);
+        const encryptedAjaxParams = `id=${encryptedKey}&alias=${id}&${decryptedToken}`;
+        document.free();
 
-        const encryptedResponse = await fetch(`${serverUrl.match(/(https?:)[^\?]*\?.*/)?.[1] ?? 'https:'}//${serverUrl.match(/https?:\/\/([^\/]*)/)?.[1] ?? ''}/encrypt-ajax.php?${encryptedAjaxParams}`, { 
-            headers: { "X-Requested-With": "XMLHttpRequest" }
-        })
-        if (encryptedResponse.status !== 200) return []
+        const encryptedResponse = await fetch(
+            `${serverUrl.match(/(https?:)[^\?]*\?.*/)?.[1] ?? "https:"}//${
+                serverUrl.match(/https?:\/\/([^\/]*)/)?.[1] ?? ""
+            }/encrypt-ajax.php?${encryptedAjaxParams}`,
+            {
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+            }
+        );
+        if (encryptedResponse.status !== 200) return [];
 
-        const encryptedData = JSON.parse(encryptedResponse.data).data
+        const encryptedData = JSON.parse(encryptedResponse.data).data;
         const decryptedData = JSON.parse(
             CryptoJS.enc.Utf8.stringify(
-                CryptoJS.AES.decrypt(encryptedData, GOGO_KEYS.secondKey, { iv: GOGO_KEYS.iv })
+                CryptoJS.AES.decrypt(encryptedData, GOGO_KEYS.secondKey, {
+                    iv: GOGO_KEYS.iv,
+                })
             )
-        )
-        
-        if (!decryptedData.source) return []
-        
-        let episodes: VideoEpisodeUrl[] = []
-        if (decryptedData.source[0].file.includes('.m3u8')) {
-            const res = await fetch(decryptedData.source[0].file.toString()).then(res => res.data)
+        );
+
+        if (!decryptedData.source) return [];
+
+        let episodes: VideoEpisodeUrl[] = [];
+        if (decryptedData.source[0].file.includes(".m3u8")) {
+            const res = await fetch(decryptedData.source[0].file.toString()).then((res) => res.data);
             const resolutions = res.match(/(RESOLUTION=)(.*)(\s*?)(\s*.*)/g);
             (resolutions ?? []).forEach((resolution: string) => {
-                const index = decryptedData.source[0].file.lastIndexOf('/')
-                const quality = resolution.split('\n')[0].split('x')[1].split(',')[0]
-                const url = decryptedData.source[0].file.slice(0, index)
+                const index = decryptedData.source[0].file.lastIndexOf("/");
+                const quality = resolution.split("\n")[0].split("x")[1].split(",")[0];
+                const url = decryptedData.source[0].file.slice(0, index);
                 episodes.push({
-                    url: url + '/' + resolution.split('\n')[1],
-                    type: (url + resolution.split('\n')[1]).includes('.m3u8') ? VideoEpisodeUrlType.hls : VideoEpisodeUrlType.video,
-                    quality: parseFloat(quality)
-                })
-            })
+                    url: url + "/" + resolution.split("\n")[1],
+                    quality: parseFloat(quality),
+                });
+            });
 
             decryptedData.source.forEach((source: any) => {
                 episodes.push({
                     url: source.file,
-                    type: source.file.includes('.m3u8') ? VideoEpisodeUrlType.hls : VideoEpisodeUrlType.video
-                })
-            })
+                    quality: "UNKNOWN",
+                });
+            });
         } else {
             decryptedData.source.forEach((source: any) => {
                 episodes.push({
                     url: source.file,
-                    type: source.file.includes('.m3u8') ? VideoEpisodeUrlType.hls : VideoEpisodeUrlType.video,
-                    quality: parseFloat(source.label.split(' ')[0])
-                })
-            })
+                    quality: parseFloat(source.label.split(" ")[0]),
+                });
+            });
         }
-      
+
         decryptedData.source_bk.forEach((source: any) => {
             episodes.push({
                 url: source.file,
-                type: source.file.includes('.m3u8') ? VideoEpisodeUrlType.hls : VideoEpisodeUrlType.video
-            })
+                quality: "UNKNOWN",
+            });
+        });
+
+        episodes.sort((e1, e2) => {
+            if (typeof e1.quality === 'number' && typeof e2.quality === 'number') {
+                return e2.quality - e1.quality
+            } else {
+                return typeof e1.quality === 'number' ? -1 : 1
+            }
         })
 
-        return episodes
+        return episodes;
     }
 
     async getStreamSBUrls(serverUrl: string): Promise<VideoEpisodeUrl[]> {
-        const rawDocument = await fetch(serverUrl).then(res => res.data)
-        const match = rawDocument.match(/\'(ces\w{2,3})\'/)?.[1]
-        let sourcesPath = typeof match === 'string' ? `sour${match}` : null
+        const rawDocument = await fetch(serverUrl).then((res) => res.data);
+        const match = rawDocument.match(/\'(ces\w{2,3})\'/)?.[1];
+        let sourcesPath = typeof match === "string" ? `sour${match}` : null;
         if (sourcesPath === null) {
-            const jsFile = rawDocument.match(/<script src=\"(\/js\/app\.min\.\d+\.js)\">/)?.[1]
-            if (typeof jsFile !== 'string') return []
-            sourcesPath = await fetch(STREAMSB_HOST + jsFile).then(res => res.data).then(data => {
-                const match = data.match(/\'(ces\w{2,3})\'/)?.[1]
-                return typeof match === 'string' ? `sour${match}` : null
-            })
+            const jsFile = rawDocument.match(/<script src=\"(\/js\/app\.min\.\d+\.js)\">/)?.[1];
+            if (typeof jsFile !== "string") return [];
+            sourcesPath = await fetch(STREAMSB_HOST + jsFile)
+                .then((res) => res.data)
+                .then((data) => {
+                    const match = data.match(/\'(ces\w{2,3})\'/)?.[1];
+                    return typeof match === "string" ? `sour${match}` : null;
+                });
         }
-        if (sourcesPath === null) return []
-        let id = serverUrl.split('/e/').pop()
-        if (id?.includes("html")) id = id.split('.html')[0]
-        if (typeof id === 'undefined') return []
-        let hexEncoded = ""
-        for (let i = 0; i < id.length; ++i) hexEncoded += ("0"+id.charCodeAt(i).toString(16)).slice(-2)
+        if (sourcesPath === null) return [];
+        let id = serverUrl.split("/e/").pop();
+        if (id?.includes("html")) id = id.split(".html")[0];
+        if (typeof id === "undefined") return [];
+
+        let hexEncoded = "";
+        for (let i = 0; i < id.length; ++i) hexEncoded += ("0" + id.charCodeAt(i).toString(16)).slice(-2);
+
         const res = await fetch(`${STREAMSB_HOST}/${sourcesPath}/${STREAMSB_PAYLOAD_START}${hexEncoded}${STREAMSB_PAYLOAD_END}`, {
             headers: {
-                'watchsb': 'sbstream',
-                'User-Agent': USER_AGENT,
-                'Referer': serverUrl
-            }
-        }).then(res => { try { return JSON.parse(res.data) } catch { return null } }).catch(() => null)
-        if (typeof res?.stream_data === 'undefined' || res?.stream_data === null) return []
+                watchsb: "sbstream",
+                "User-Agent": USER_AGENT,
+                Referer: serverUrl,
+            },
+        })
+            .then((res) => {
+                try {
+                    return JSON.parse(res.data);
+                } catch {
+                    return null;
+                }
+            })
+            .catch(() => null);
+        if (typeof res?.stream_data === "undefined" || res?.stream_data === null) return [];
+
         const m3u8Urls = await fetch(res.stream_data.file, {
             headers: {
-                'User-Agent': USER_AGENT,
-                'Referer': serverUrl.split("e/")[0],
-                'Accept-Language': 'en-US,en;q=0.9'
+                "User-Agent": USER_AGENT,
+                Referer: serverUrl.split("e/")[0],
+                "Accept-Language": "en-US,en;q=0.9",
             },
-        }).then(res => res.data).catch(() => null)
-        if (m3u8Urls === null) return []
-      
-        const videoList = m3u8Urls.split('#EXT-X-STREAM-INF:')
-      
-        let urls: VideoEpisodeUrl[] = []
-        for (const video of videoList ?? []) {
-            if (!video.includes('m3u8')) continue
+        })
+            .then((res) => res.data)
+            .catch(() => null);
+        if (m3u8Urls === null) return [];
 
-            const url = video.split('\n')[1]
-            const quality = video.split('RESOLUTION=')[1].split(',')[0].split('x')[1]
+        const videoList = m3u8Urls.split("#EXT-X-STREAM-INF:");
+
+        let urls: VideoEpisodeUrl[] = [];
+        for (const video of videoList ?? []) {
+            if (!video.includes("m3u8")) continue;
+
+            const url = video.split("\n")[1];
+            const quality = video.split("RESOLUTION=")[1].split(",")[0].split("x")[1];
             urls.push({
                 url: url,
                 quality: parseFloat(quality),
-                type: VideoEpisodeUrlType.hls
-            })
+            });
         }
 
         urls.push({
             url: res.stream_data.file,
-            type: res.stream_data.file.includes('.m3u8') ? VideoEpisodeUrlType.hls : VideoEpisodeUrlType.video
-        })
+            quality: "UNKNOWN",
+        });
 
-        return urls
+        return urls;
+    }
+
+    async refreshBaseUrl() {
+        const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
+        const url = document.querySelectorAll(".site_go > a")[0].getAttribute("href");
+        document.free();
+        baseUrl = url;
     }
 }
