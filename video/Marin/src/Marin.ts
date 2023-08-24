@@ -1,21 +1,17 @@
-import { createEntry, createEntryResults, createVideoEpisodeDetails, Entry, EntryContentRating, EntryResults, EntryResultsInfo, EntryStatus, FetchOptions, Listing, VideoEpisode, VideoEpisodeDetails, VideoSource, Filter, Document, createShortEntry, fetch, createMultiSelectFilter, createSortFilter, MultiSelectFilter, SortFilter, ShortEntry, createListing, createVideoEpisode, VideoEpisodeType, VideoEpisodeUrl, VideoEpisodeUrlType, createVideoEpisodeProvider, VideoEpisodeProvider, createSegmentFilter, createAscendableSortFilter, createExcludableMultiSelectFilter, createVideoEpisodeUrl } from "soshiki-sources"
+import { createVideoEntry, createVideoEntryResults, createVideoEpisodeDetails, VideoEntry, EntryContentRating, VideoEntryResults, EntryStatus, FetchOptions, Listing, VideoEpisode, VideoEpisodeDetails, VideoSource, Filter, Document, fetch, createMultiSelectFilter, createSortFilter, MultiSelectFilter, SortFilter, createListing, createVideoEpisode, VideoEpisodeType, VideoEpisodeUrl, createVideoEpisodeProvider, VideoEpisodeProvider, createSegmentFilter, createAscendableSortFilter, createExcludableMultiSelectFilter, createVideoEpisodeUrl, ListingType, FilterGroup, createFilterGroup, VideoEpisodeResults, createVideoEpisodeResults } from "soshiki-sources"
 import { parse, splitCookiesString, Cookie } from "set-cookie-parser"
 
 export default class MarinSource extends VideoSource {
-    INERTIA_VERSION = "5ee7503af8c9844b1e8d34466b727694"
+    INERTIA_VERSION = "ca886640f755549c7a6529989f873c06"
     USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36'
     BASE_URL = "https://marin.moe"
-
-    mappings: {[key: string]: {[key2: string]: string | number}} = {}
 
     cookies: string[] = []
 
     id = "multi_marin"
-    async getListing(previousInfo: EntryResultsInfo | null, listing: Listing): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
+    async getListing(listing: Listing, page: number): Promise<VideoEntryResults> {
         const data = {
-            sort: listing.id === "" ? "az-a" : listing.id,
-            filter: Object.keys(this.mappings).filter(id => id !== "sort"),
+            sort: listing.id,
             page
         }
         const json = await this.fetchWithCookies(`${this.BASE_URL}/anime`, {
@@ -32,26 +28,24 @@ export default class MarinSource extends VideoSource {
             },
             body: JSON.stringify(data)
         }).then(res => JSON.parse(res.data).props)
-        return createEntryResults({
-            entries: json.anime_list.data.map((item: any) => createShortEntry({
+        return createVideoEntryResults({
+            results: json.anime_list.data.map((item: any) => createVideoEntry({
                 id: item.slug,
                 title: item.title,
-                subtitle: "",
                 cover: item.cover
             })),
             page: page,
             hasMore: page < json.anime_list.meta.last_page
         })
     }
-    async getSearchResults(previousInfo: EntryResultsInfo | null, query: string, filters: Filter[]): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
-        const sort = filters.find(filter => filter.id === "sort")?.value as [string, boolean] ?? ["A to Z", false]
+    async getSearchResults(query: string, page: number, filters: Filter[]): Promise<VideoEntryResults> {
+        const sort = (filters.find(filter => filter.id === "sort")?.value as any[])?.find(e => e.selected)
         let filterMap: {[key: string]: {id: number, opr: "include" | "exclude"}[]} = {}
         for (const filter of filters.filter(filter => filter.id !== "sort")) {
-            filterMap[filter.id] = (filter.value as [string, boolean][]).map(value => ({ id: this.mappings[filter.id]?.[value[0]] as number ?? 0, opr: value[1] === true ? "exclude" : "include" }))
+            filterMap[filter.id] = (filter.value as any[]).map(value => ({ id: parseInt(value.id), opr: value.excluded === true ? "exclude" : "include" }))
         }
         const data = {
-            sort: (this.mappings.sort?.[sort[0]] ?? "az") + (sort[1] === true ? "-a" : "-d"),
+            sort: (sort.id) + (sort.ascending === true ? "-a" : "-d"),
             filter: filterMap,
             search: query,
             page
@@ -70,18 +64,17 @@ export default class MarinSource extends VideoSource {
             },
             body: JSON.stringify(data)
         }).then(res => JSON.parse(res.data).props)
-        return createEntryResults({
-            entries: json.anime_list.data.map((item: any) => createShortEntry({
+        return createVideoEntryResults({
+            results: json.anime_list.data.map((item: any) => createVideoEntry({
                 id: item.slug,
                 title: item.title,
-                subtitle: "",
                 cover: item.cover
             })),
             page: page,
             hasMore: page < json.anime_list.meta.last_page
         })
     }
-    async getEntry(id: string): Promise<Entry> {
+    async getEntry(id: string): Promise<VideoEntry> {
         const json = await this.fetchWithCookies(`${this.BASE_URL}/anime/${id}`, {
             headers: {
                 "Content-Type": "application/json",
@@ -94,20 +87,20 @@ export default class MarinSource extends VideoSource {
                 "X-Inertia-Version": this.INERTIA_VERSION
             }
         }).then(res => JSON.parse(res.data).props.anime)
-        return createEntry({
+        return createVideoEntry({
             id,
             title: json.title,
-            staff: json.production_list.map((item: {name: string}) => item.name),
             tags: json.genre_list.map((item: {name: string}) => item.name),
             cover: json.cover,
-            nsfw: json.content_rating.id === 6 ? EntryContentRating.nsfw : json.content_rating.id === 4 ? EntryContentRating.suggestive : EntryContentRating.safe,
+            contentRating: json.content_rating.id === 6 ? EntryContentRating.nsfw : json.content_rating.id === 4 ? EntryContentRating.suggestive : EntryContentRating.safe,
             status: json.status.id === 2 ? EntryStatus.ongoing : json.status.id === 3 ? EntryStatus.completed : json.status.id === 4 ? EntryStatus.hiatus : EntryStatus.unknown,
-            url: `${this.BASE_URL}/anime/${id}`,
-            description: json.description
+            links: [ `${this.BASE_URL}/anime/${id}` ],
+            synopsis: json.description
         })
     }
-    async getEpisodes(id: string): Promise<VideoEpisode[]> {
+    async getEpisodes(id: string, page: number): Promise<VideoEpisodeResults> {
         const json = await this.fetchWithCookies(`${this.BASE_URL}/anime/${id}`, {
+            method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "User-Agent": this.USER_AGENT,
@@ -117,37 +110,24 @@ export default class MarinSource extends VideoSource {
                 "X-Inertia-Partial-Component": "AnimeDetail",
                 "X-Inertia": "true",
                 "X-Inertia-Version": this.INERTIA_VERSION
-            }
+            },
+            body: JSON.stringify({
+                filter: { episodes: true, specials: true },
+                sort: "srt-d",
+                eps_page: page
+            })
         }).then(res => JSON.parse(res.data).props.episode_list)
-        let episodes = json.data.map((episode: any) => createVideoEpisode({
-            id: episode.slug,
-            entryId: id,
-            episode: isNaN(parseInt(episode.slug)) ? episode.sort : parseInt(episode.slug),
-            type: VideoEpisodeType.unknown,
-            name: episode.title
-        }))
-        for (let page = 2; page < json.meta.last_page; ++page) {
-            const json2 = await this.fetchWithCookies(`${this.BASE_URL}/anime/${id}?eps_page=${page}`, {
-                headers: {
-                    "Content-Type": "application/json",
-                    "User-Agent": this.USER_AGENT,
-                    "Referer": `${this.BASE_URL}/anime`,
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-Inertia-Partial-Data": "episode_list",
-                    "X-Inertia-Partial-Component": "AnimeDetail",
-                    "X-Inertia": "true",
-                    "X-Inertia-Version": this.INERTIA_VERSION
-                }
-            }).then(res => JSON.parse(res.data).props.episode_list)
-            episodes.push(...json2.data.map((episode: any) => createVideoEpisode({
+        return createVideoEpisodeResults({
+            page: page,
+            hasMore: page < json.meta.last_page,
+            results: json.data.map((episode: any) => createVideoEpisode({
                 id: episode.slug,
                 entryId: id,
                 episode: isNaN(parseInt(episode.slug)) ? episode.sort : parseInt(episode.slug),
                 type: VideoEpisodeType.unknown,
                 name: episode.title
-            })))
-        }
-        return episodes.reverse()
+            }))
+        })
     }
     async getEpisodeDetails(id: string, entryId: string): Promise<VideoEpisodeDetails> {
         const json = await this.fetchWithCookies(`${this.BASE_URL}/anime/${entryId}/${id}`, {
@@ -164,7 +144,6 @@ export default class MarinSource extends VideoSource {
         let providers: VideoEpisodeProvider[] = [createVideoEpisodeProvider({
             name: `${json.video.data.title} - ${json.video.data.audio.name} (${json.video.data.subtitle.id === 1 ? "No" : json.video.data.subtitle.name} Subtitles)`,
             urls: json.video.data.mirror.map((url: any) => createVideoEpisodeUrl({
-                type: VideoEpisodeUrlType.video,
                 quality: parseInt(url.resolution.slice(0, -1)),
                 url: url.code.file
             }))
@@ -186,7 +165,6 @@ export default class MarinSource extends VideoSource {
             providers.push(createVideoEpisodeProvider({
                 name: `${json.video.data.title} - ${json.video.data.audio.name} (${json.video.data.subtitle.id === 1 ? "No" : json.video.data.subtitle.name} Subtitles)`,
                 urls: json.video.data.mirror.map((url: any) => createVideoEpisodeUrl({
-                    type: VideoEpisodeUrlType.video,
                     quality: parseInt(url.resolution.slice(0, -1)),
                     url: url.code.file
                 }))
@@ -199,7 +177,7 @@ export default class MarinSource extends VideoSource {
             providers
         })
     }
-    async getFilters(): Promise<Filter[]> {
+    async getFilters(): Promise<FilterGroup[]> {
         const json = await this.fetchWithCookies(`${this.BASE_URL}/anime`, {
             headers: {
                 "Content-Type": "application/json",
@@ -214,55 +192,56 @@ export default class MarinSource extends VideoSource {
         if (typeof json !== 'object') return []
         let filters: Filter[] = []
         const sortKeys = Object.keys(json.sort_list).filter(key => key.endsWith("-d"))
-        let sortOptions: string[] = []
-        this.mappings["sort"] = {}
+        let sortOptions: any[] = []
+
         for (const sortKey of sortKeys) {
-            const sortName = json.sort_list[sortKey]
-            this.mappings.sort[sortName] = sortKey.replace("-d", "")
-            sortOptions.push(sortName)
+            sortOptions.push({ id: sortKey.replace("-d", ""), name: json.sort_list[sortKey], selected: false, ascending: false })
         }
         filters.push(createAscendableSortFilter({
             id: "sort",
             name: "Sort",
-            value: typeof sortOptions[0] === 'string' ? [sortOptions[0], false] : null,
-            selections: sortOptions
+            value: sortOptions
         }))
         for (const taxonomyKey of Object.keys(json.taxonomy_list)) {
             const taxonomyName = taxonomyKey.split("_").map(word => word[0].toUpperCase() + word.substring(1)).join(" ")
-            this.mappings[taxonomyKey] = {}
-            for (const item of json.taxonomy_list[taxonomyKey]) {
-                this.mappings[taxonomyKey][item.name] = item.id
-            }
+
             filters.push(createExcludableMultiSelectFilter({
                 id: taxonomyKey,
                 name: taxonomyName,
-                value: [],
-                selections: json.taxonomy_list[taxonomyKey].map((item: {name: string}) => item.name)
+                value: json.taxonomy_list[taxonomyKey].map((item: { id: string, name: string }) => ({ id: `${item.id}`, name: item.name, selected: false, excluded: false }))
             }))
         }
-        return filters
+        return [
+            createFilterGroup({
+                filters: filters
+            })
+        ]
     }
     async getListings(): Promise<Listing[]> {
         return [
             createListing({
                 id: "rel-d",
-                name: "Latest Release"
+                name: "Latest Release",
+                type: ListingType.featured
             }),
             createListing({
                 id: "vwk-d",
-                name: "Most Popular (Weekly)"
+                name: "Most Popular (Weekly)",
+                type: ListingType.basic
             }),
             createListing({
                 id: "vmt-d",
-                name: "Most Popular (Monthly)"
+                name: "Most Popular (Monthly)",
+                type: ListingType.basic
             }),
             createListing({
                 id: "vtt-d",
-                name: "Most Popular (All Time)"
+                name: "Most Popular (All Time)",
+                type: ListingType.basic
             })
         ]
     }
-    async getSettings(): Promise<Filter[]> {
+    async getSettings(): Promise<FilterGroup[]> {
         return []
     }
     async modifyVideoRequest(url: string, options: FetchOptions): Promise<{ url: string; options: FetchOptions; }> {

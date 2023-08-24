@@ -13,7 +13,7 @@
   "dependencies": {
     "babelify": "^10.0.0",
     "browserify": "^17.0.0",
-    "soshiki-sources": "^0.2.0"
+    "soshiki-sources": "file:../../../soshiki-sources/soshiki-sources-0.3.0.tgz"
   },
   "devDependencies": {
     "@babel/plugin-transform-classes": "^7.20.2",

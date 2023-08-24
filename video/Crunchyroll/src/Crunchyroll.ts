@@ -1,4 +1,4 @@
-import { createEntry, createEntryResults, createVideoEpisodeDetails, Entry, EntryContentRating, EntryResults, EntryResultsInfo, EntryStatus, FetchOptions, Listing, VideoEpisode, VideoEpisodeDetails, VideoSource, Filter, Document, createShortEntry, fetch, createMultiSelectFilter, createSortFilter, MultiSelectFilter, SortFilter, ShortEntry, createListing, createVideoEpisode, VideoEpisodeType, VideoEpisodeUrl, VideoEpisodeUrlType, createVideoEpisodeProvider, VideoEpisodeProvider, createSegmentFilter, createSelectFilter, createTextFilter, createVideoEpisodeUrl } from "soshiki-sources"
+import { createVideoEntry, createVideoEntryResults, createVideoEpisodeDetails, VideoEntry, EntryContentRating, VideoEntryResults, EntryStatus, FetchOptions, Listing, VideoEpisode, VideoEpisodeDetails, VideoSource, Filter, Document, fetch, createMultiSelectFilter, createSortFilter, MultiSelectFilter, SortFilter, createListing, createVideoEpisode, VideoEpisodeType, VideoEpisodeUrl, createVideoEpisodeProvider, VideoEpisodeProvider, createSegmentFilter, createSelectFilter, createTextFilter, createVideoEpisodeUrl, VideoEpisodeResults, createVideoEpisodeResults, FilterGroup, createFilterGroup, ListingType } from "soshiki-sources"
 
 export default class GogoanimeSource extends VideoSource {
     BASE_URL = "https://beta-api.crunchyroll.com"
@@ -52,72 +52,71 @@ export default class GogoanimeSource extends VideoSource {
     id = "multi_crunchyroll"
 
     get locale(): string {
-        return this.LOCALES[this.getSettingsValue("locale") as string ?? "English"] ?? "en-US"
+        return (this.getSettingsValue("locale") as any)?.id ?? "en-US"
     }
 
-    async getListing(previousInfo: EntryResultsInfo | null, listing: Listing): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
+    async getListing(listing: Listing, page: number): Promise<VideoEntryResults> {
         let url = `${this.BASE_URL}/content/v1/browse?sort_by=${listing.id === "" ? "popularity" : listing.id}&n=50&start=${(page - 1) * 50}&locale=${this.locale}`
         const json = await this.fetchAuth(url).then(res => JSON.parse(res.data))
-        return createEntryResults({
+        return createVideoEntryResults({
             page,
-            entries: json.items?.map((item: any) => createShortEntry({
+            results: json.items?.map((item: any) => createVideoEntry({
                 id: item.id,
                 title: item.title,
-                subtitle: "",
                 cover: item.images?.poster_tall?.[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? ""
             })) ?? [],
             hasMore: (json.total ?? 0) > page * 50
         })
     }
-    async getSearchResults(previousInfo: EntryResultsInfo | null, query: string, filters: Filter[]): Promise<EntryResults> {
-        const page = previousInfo === null ? 1 : previousInfo.page + 1
+    async getSearchResults(query: string, page: number, filters: Filter[]): Promise<VideoEntryResults> {
         let url = `${this.BASE_URL}/content/v1/search?q=${encodeURIComponent(query)}&n=50&start=${(page - 1) * 50}&locale=${this.locale}`
         const json = await this.fetchAuth(url).then(res => JSON.parse(res.data))
-        return createEntryResults({
+        return createVideoEntryResults({
             page,
-            entries: json.items?.find((e: any) => e.type === "series")?.items.map((item: any) => createShortEntry({
+            results: json.items?.find((e: any) => e.type === "series")?.items.map((item: any) => createVideoEntry({
                 id: item.id,
                 title: item.title,
-                subtitle: "",
                 cover: item.images?.poster_tall?.[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? ""
             })) ?? [],
             hasMore: json.items?.find((e: any) => e.type === "series")?.total > page * 50 ?? false
         })
     }
-    async getEntry(id: string): Promise<Entry> {
+    async getEntry(id: string): Promise<VideoEntry> {
         const json = await this.fetchAuth(`${this.BASE_URL}/content/v2/cms/objects/${id}`).then(res => JSON.parse(res.data))
         const item = json.data[0]
-        return createEntry({
+        return createVideoEntry({
             id,
             title: item.title,
-            staff: [],
             tags: item.series_metadata.tenant_categories,
             cover: item.images?.poster_tall?.[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? "",
             banner: item.images?.poster_wide?.[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? "",
-            nsfw: item.series_metadata.is_mature ? EntryContentRating.nsfw : EntryContentRating.safe,
+            contentRating: item.series_metadata.is_mature ? EntryContentRating.nsfw : EntryContentRating.safe,
             status: EntryStatus.unknown,
-            url: `https://www.crunchyroll.com/series/${id}`,
-            description: item.description,
+            links: [ `https://www.crunchyroll.com/series/${id}` ],
+            synopsis: item.description,
         })
     }
-    async getEpisodes(id: string): Promise<VideoEpisode[]> {
+    async getEpisodes(id: string, page: number): Promise<VideoEpisodeResults> {
         const json = await this.fetchAuth(`${this.BASE_URL}/content/v2/cms/series/${id}/seasons`).then(res => JSON.parse(res.data))
-        return await Promise.all(
-            json.data.map((season: any) => new Promise(async res => {
-                const episodeJson = await this.fetchAuth(`${this.BASE_URL}/content/v2/cms/seasons/${season.id}/episodes`).then(res => JSON.parse(res.data))
-                res(episodeJson.data.map((episode: any) => episode.versions.filter((version: any) => version.audio_locale === this.locale || version.audio_locale === "ja-JP").map((version: any) => createVideoEpisode({
-                    id: version.media_guid,
-                    entryId: id,
-                    name: episode.title,
-                    episode: episode.episode_number,
-                    season: episode.season_number,
-                    thumbnail: episode.images.thumbnail[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? "",
-                    timestamp: Date.parse(episode.upload_date) / 1000,
-                    type: version.audio_locale === this.locale ? VideoEpisodeType.dub : episode.subtitle_locales.length > 0 ? VideoEpisodeType.sub : VideoEpisodeType.native
-                }))))
-            }))
-        ).then(data => data.flat(3).sort((a: any, b: any) => b.season - a.season === 0 ? b.episode - a.episode : b.season - a.season))
+        return createVideoEpisodeResults({
+            page: page,
+            hasMore: false,
+            results: await Promise.all(
+                json.data.map((season: any) => new Promise(async res => {
+                    const episodeJson = await this.fetchAuth(`${this.BASE_URL}/content/v2/cms/seasons/${season.id}/episodes`).then(res => JSON.parse(res.data))
+                    res(episodeJson.data.map((episode: any) => episode.versions.filter((version: any) => version.audio_locale === this.locale || version.audio_locale === "ja-JP").map((version: any) => createVideoEpisode({
+                        id: version.media_guid,
+                        entryId: id,
+                        name: episode.title,
+                        episode: episode.episode_number,
+                        season: episode.season_number,
+                        thumbnail: episode.images.thumbnail[0]?.sort((a: any, b: any) => b.height - a.height)[0]?.source ?? "",
+                        timestamp: Date.parse(episode.upload_date) / 1000,
+                        type: version.audio_locale === this.locale ? VideoEpisodeType.dub : episode.subtitle_locales.length > 0 ? VideoEpisodeType.sub : VideoEpisodeType.native
+                    }))))
+                }))
+            ).then(data => data.flat(3).sort((a: any, b: any) => b.season - a.season === 0 ? b.episode - a.episode : b.season - a.season))
+        })
     }
     async getEpisodeDetails(id: string, entryId: string): Promise<VideoEpisodeDetails> {
         const json = await this.fetchAuth(`${this.BASE_URL}/content/v2/cms/videos/${id}/streams`).then(res => JSON.parse(res.data))
@@ -139,8 +138,7 @@ export default class GogoanimeSource extends VideoSource {
                 const quality = video.split('RESOLUTION=')[1].split(',')[0].split('x')[1]
                 urls.push({
                     url,
-                    quality: parseFloat(quality),
-                    type: VideoEpisodeUrlType.hls
+                    quality: parseFloat(quality)
                 })
             }
             res(createVideoEpisodeProvider({
@@ -155,38 +153,53 @@ export default class GogoanimeSource extends VideoSource {
             providers: await Promise.all(promises)
         });
     }
-    async getFilters(): Promise<Filter[]> {
+    async getFilters(): Promise<FilterGroup[]> {
         return []
     }
     async getListings(): Promise<Listing[]> {
         return [
             createListing({
                 id: "newly_added",
-                name: "Newly Added"
+                name: "Newly Added",
+                type: ListingType.trending
             }),
             createListing({
                 id: "popularity",
-                name: "Popularity"
+                name: "Popularity",
+                type: ListingType.topRated
             })
         ]
     }
-    async getSettings(): Promise<Filter[]> {
+    async getSettings(): Promise<FilterGroup[]> {
         return [
-            createTextFilter({
-                id: "email",
-                name: "Email",
-                value: ""
+            createFilterGroup({
+                header: "General",
+                filters: [
+                    createSelectFilter({
+                        id: "locale",
+                        name: "Locale",
+                        value: Object.entries(this.LOCALES).map(locale => ({
+                            id: locale[1],
+                            name: locale[0],
+                            selected: locale[1] === "en-US"
+                        }))
+                    })
+                ]
             }),
-            createTextFilter({
-                id: "password",
-                name: "Password",
-                value: ""
-            }),
-            createSelectFilter({
-                id: "locale",
-                name: "Locale",
-                value: "English",
-                selections: Object.values(this.LOCALES)
+            createFilterGroup({
+                header: "Account",
+                filters: [
+                    createTextFilter({
+                        id: "email",
+                        name: "Email",
+                        value: ""
+                    }),
+                    createTextFilter({
+                        id: "password",
+                        name: "Password",
+                        value: ""
+                    })
+                ]
             })
         ]
     }
