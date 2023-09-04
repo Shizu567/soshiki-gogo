@@ -595,5 +595,6 @@ export default class GogoanimeSource extends VideoSource {
         const url = document.querySelectorAll(".site_go > a")[0].getAttribute("href");
         document.free();
         baseUrl = url;
+        if (baseUrl === null || typeof baseUrl === "undefined") baseUrl = "https://gogoanimehd.io"
     }
 }
