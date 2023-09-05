@@ -592,7 +592,7 @@ export default class GogoanimeSource extends VideoSource {
 
     async refreshBaseUrl() {
         try {
-            const document = await fetch("https://gogotaku.inf").then((res) => Document.parse(res.data));
+            const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
             const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://gogoanimehd.io";
             document.free();
             baseUrl = url;
