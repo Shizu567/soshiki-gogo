@@ -41,11 +41,6 @@ const AJAX_URL = "https://ajax.gogo-load.com";
 const URL_REGEX = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/;
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36";
-const GOGO_KEYS = {
-    key: CryptoJS.enc.Utf8.parse("37911490979715163134003223491201"),
-    secondKey: CryptoJS.enc.Utf8.parse("54674138327930866480207815084989"),
-    iv: CryptoJS.enc.Utf8.parse("3134003223491201"),
-};
 
 const STREAMSB_HOST = "https://streamsss.net";
 const STREAMSB_PAYLOAD_START = "5773626d62663976713374717c7c";
@@ -439,15 +434,23 @@ export default class GogoanimeSource extends VideoSource {
                 .match(/([^\?]*)\?(.*)/)?.[2]
                 .split("&")
                 .find((e) => e.split("=")[0] === "id")
-                ?.split("=")[1] ?? "";
-        const encryptedKey = CryptoJS.AES.encrypt(id, GOGO_KEYS.key, {
-            iv: GOGO_KEYS.iv,
-        });
+                ?.match(/id=(.*)/)?.[1] ?? "";
+
+        const iv = CryptoJS.enc.Utf8.parse(document.querySelector("div.wrapper").className.split("container-")[1]);
+        const key = CryptoJS.enc.Utf8.parse(document.querySelector("body").className.split("container-")[1]);
+        const secondKey = CryptoJS.enc.Utf8.parse(document.querySelector("div.videocontent").className.split("videocontent-")[1]);
+
+        const encryptedKey = CryptoJS.AES.encrypt(id, key, { iv, padding: CryptoJS.pad.Pkcs7, mode: CryptoJS.mode.CBC });
+
         const scriptValue = document.querySelector("script[data-name='episode']").getAttribute("data-value");
-        const decryptedToken = CryptoJS.AES.decrypt(scriptValue, GOGO_KEYS.key, {
-            iv: GOGO_KEYS.iv,
-        }).toString(CryptoJS.enc.Utf8);
-        const encryptedAjaxParams = `id=${encryptedKey}&alias=${id}&${decryptedToken}`;
+        const decryptedToken = CryptoJS.AES.decrypt(scriptValue, key, { iv, padding: CryptoJS.pad.Pkcs7, mode: CryptoJS.mode.CBC }).toString(
+            CryptoJS.enc.Utf8
+        );
+
+        const encryptedAjaxParams = decryptedToken.startsWith(id)
+            ? `id=${encryptedKey}&alias=${decryptedToken}`
+            : `id=${encryptedKey}&alias=${id}&${decryptedToken}`;
+
         document.free();
 
         const encryptedResponse = await fetch(
@@ -461,12 +464,9 @@ export default class GogoanimeSource extends VideoSource {
         if (encryptedResponse.status !== 200) return [];
 
         const encryptedData = JSON.parse(encryptedResponse.data).data;
+
         const decryptedData = JSON.parse(
-            CryptoJS.enc.Utf8.stringify(
-                CryptoJS.AES.decrypt(encryptedData, GOGO_KEYS.secondKey, {
-                    iv: GOGO_KEYS.iv,
-                })
-            )
+            CryptoJS.AES.decrypt(encryptedData, secondKey, { iv, padding: CryptoJS.pad.Pkcs7, mode: CryptoJS.mode.CBC }).toString(CryptoJS.enc.Utf8)
         );
 
         if (!decryptedData.source) return [];
@@ -508,12 +508,12 @@ export default class GogoanimeSource extends VideoSource {
         });
 
         episodes.sort((e1, e2) => {
-            if (typeof e1.quality === 'number' && typeof e2.quality === 'number') {
-                return e2.quality - e1.quality
+            if (typeof e1.quality === "number" && typeof e2.quality === "number") {
+                return e2.quality - e1.quality;
             } else {
-                return typeof e1.quality === 'number' ? -1 : 1
+                return typeof e1.quality === "number" ? -1 : 1;
             }
-        })
+        });
 
         return episodes;
     }
@@ -591,10 +591,13 @@ export default class GogoanimeSource extends VideoSource {
     }
 
     async refreshBaseUrl() {
-        const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
-        const url = document.querySelectorAll(".site_go > a")[0].getAttribute("href");
-        document.free();
-        baseUrl = url;
-        if (baseUrl === null || typeof baseUrl === "undefined") baseUrl = "https://gogoanimehd.io"
+        try {
+            const document = await fetch("https://gogotaku.inf").then((res) => Document.parse(res.data));
+            const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://gogoanimehd.io";
+            document.free();
+            baseUrl = url;
+        } catch (error) {
+            baseUrl = "https://gogoanimehd.io";
+        }
     }
 }
