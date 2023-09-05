@@ -45,7 +45,7 @@ export default class MarinSource extends VideoSource {
             filterMap[filter.id] = (filter.value as any[]).map(value => ({ id: parseInt(value.id), opr: value.excluded === true ? "exclude" : "include" }))
         }
         const data = {
-            sort: (sort.id) + (sort.ascending === true ? "-a" : "-d"),
+            sort: (sort?.id ?? "az") + (sort?.ascending === true ? "-a" : "-d"),
             filter: filterMap,
             search: query,
             page
