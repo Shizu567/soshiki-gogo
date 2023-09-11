@@ -385,6 +385,7 @@ export default class GogoanimeSource extends VideoSource {
     async getSettings(): Promise<FilterGroup[]> {
         return [
             createFilterGroup({
+                header: "Providers",
                 filters: [
                     createSegmentFilter({
                         id: "preferredProvider",
@@ -403,6 +404,17 @@ export default class GogoanimeSource extends VideoSource {
                 ],
                 footer: "Disabling StreamSB could prevent some possible issues with episode loading.",
             }),
+            createFilterGroup({
+                header: "General",
+                filters: [
+                    createToggleFilter({
+                        id: "disableDynamicUrl",
+                        value: false,
+                        name: "Disable Dynamic URL Fetching"
+                    })
+                ],
+                footer: "Disabling dynamic URL fetching could prevent slow load times for some users."
+            })
         ];
     }
     async modifyVideoRequest(url: string, options: FetchOptions): Promise<{ url: string; options: FetchOptions }> {
@@ -592,6 +604,7 @@ export default class GogoanimeSource extends VideoSource {
 
     async refreshBaseUrl() {
         try {
+            if (this.getSettingsValue("disableDynamicUrl")?.value === true) throw new Error();
             const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
             const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://gogoanimehd.io";
             document.free();
