@@ -606,11 +606,11 @@ export default class GogoanimeSource extends VideoSource {
         try {
             if (this.getSettingsValue("disableDynamicUrl")?.value === true) throw new Error();
             const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
-            const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://gogoanimehd.io";
+            const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://anitaku.to";
             document.free();
             baseUrl = url;
         } catch (error) {
-            baseUrl = "https://gogoanimehd.io";
+            baseUrl = "https://anitaku.to";
         }
     }
 }
