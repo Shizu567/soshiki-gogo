@@ -603,6 +603,8 @@ export default class GogoanimeSource extends VideoSource {
     }
 
     async refreshBaseUrl() {
+        baseUrl = "https://anitaku.to";
+        return
         try {
             if (this.getSettingsValue("disableDynamicUrl")?.value === true) throw new Error();
             const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
