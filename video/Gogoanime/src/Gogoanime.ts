@@ -603,16 +603,16 @@ export default class GogoanimeSource extends VideoSource {
     }
 
     async refreshBaseUrl() {
-        baseUrl = "https://anitaku.to";
+        baseUrl = "https://gogoanime3.co";
         return
         try {
             if (this.getSettingsValue("disableDynamicUrl")?.value === true) throw new Error();
             const document = await fetch("https://gogotaku.info").then((res) => Document.parse(res.data));
-            const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://anitaku.to";
+            const url = document.querySelectorAll(".site_go > a")[0]?.getAttribute("href") ?? "https://gogoanime3.co";
             document.free();
             baseUrl = url;
         } catch (error) {
-            baseUrl = "https://anitaku.to";
+            baseUrl = "https://gogoanime3.co";
         }
     }
 }
